@@ -1,0 +1,24 @@
+_build
+deps
+log
+tmp
+
+erl_crash.dump
+docker-compose.yml
+.dockerignore
+.git
+.gitignore
+*.swp
+*.swo
+*.log
+*.orig
+*.ez
+.idea
+.DS_Store
+Jenkinsfile
+data
+
+# ignore all markdown files (md) beside all README*.md other than README-secret.md
+*.md
+!README*.md
+README-secret.md
