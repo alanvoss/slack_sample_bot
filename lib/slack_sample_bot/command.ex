@@ -16,7 +16,7 @@ defmodule SlackSampleBot.Command do
     {_channel, _command} = parsed_command = parse_command(params)
 
     manager_result = Manager.call(parsed_command)
-    # send_chat_message(channel, [])
+    #send_chat_message(channel, [])
     response =  response(manager_result, parsed_command)
 
     conn
@@ -48,11 +48,6 @@ defmodule SlackSampleBot.Command do
     end
   end
 
-  defp response(result, _) when length(result) == 0 do
-    %{
-      "text": "List is empty",
-    }
-  end
   defp response(result, {_, {:help}}) do
     attachments = Enum.map(result, &(%{"text" => &1}))
 
@@ -61,47 +56,52 @@ defmodule SlackSampleBot.Command do
       "attachments": attachments
     }
   end
-  defp response(items, {_, type}) when elem(type, 0) in [:edit, :remove] do
+  
+  defp response(channel_state, {_, {:state, :time}}) do
     attachments =
-      items 
-      |> Enum.with_index()
-      |> Enum.map(fn {%{"id" => id, "item" => item}, index} ->
+      channel_state.answers
+      |> Enum.map(fn {id, %{answer: answer, count: count}} ->
            %{
-             "text": "#{index + 1}. #{item}",
+             "text": "#{answer}",
              "callback_id": "edit_items",
+             "response_type": "in_channel",
              "attachment_type": "default",
              "actions": [
                %{
-                 "name": "remove",
-                 "text": "Remove",
+                 "name": "vote",
+                 "text": "Vote",
                  "type": "button",
                  "value": id,
-                 "confirm": %{
-                   "title": "Are you sure?",
-                   "text": "This will remove the item from the queue and is irreversible.",
-                   "ok_text": "Yes",
-                   "dismiss_text": "No"
-                 }
                }
              ]
            }
          end)
 
     %{
-      "text": "Edit the queue",
+      "text": "Answers",
       "attachments": attachments
     }
   end
-  defp response(items, {_, type}) when elem(type, 0) == :push do
+  defp response(channel_state, {_, {:state, :tally}}) do
     attachments =
-      items
-      |> Enum.with_index()
-      |> Enum.map(fn {queue, index} -> %{"text" => "#{index + 1}. #{queue}"} end)
+      channel_state.answers
+      |> Enum.map(fn {id, %{answer: answer, count: count}} ->
+           %{
+             "text": "#{answer}: #{count}",
+             "response_type": "in_channel",
+           }
+         end)
 
     %{
-      "text": "Current List",
+      "text": "Votes",
       "attachments": attachments
     }
+  end
+  defp response(acronym, {_, type}) when elem(type, 0) == :start do
+    %{"text": acronym, "response_type": "in_channel"}
+  end
+  defp response(items, {_, type}) when elem(type, 0) in [:submit, :vote] do
+    %{}
   end
 
   # button clicks
@@ -118,11 +118,16 @@ defmodule SlackSampleBot.Command do
   end
   # typed /queue (or whatever app name is) calls
   defp parse_command(%{"text" => text, "channel_id" => channel_id, "trigger_id" => id}) do
-    cond do
+    submit_re = ~r/^\s*submit\s+(?<answer>.+)*$/
+    cond do 
       text =~ ~r/^\s*help\s*$/ -> {channel_id, {:help}}
-      text =~ ~r/^\s*edit\s*$/ -> {channel_id, {:edit}}
+      text =~ ~r/^\s*start\s*$/ -> {channel_id, {:start}}
+      text =~ ~r/^\s*time\s*$/ -> {channel_id, {:state, :time}}
+      text =~ ~r/^\s*tally\s*$/ -> {channel_id, {:state, :tally}}
+      text =~ submit_re ->
+        %{"answer" => answer} = Regex.named_captures(submit_re, text)
+        {channel_id, {:submit, answer, id}}
       text =~ ~r/^\s*$/ -> {channel_id, {:help}}
-      true -> {channel_id, {:push, id, text}}
     end
   end
 end

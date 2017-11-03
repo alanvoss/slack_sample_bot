@@ -19,34 +19,36 @@ defmodule SlackSampleBot.Manager do
   # placeholder in case you'd like to do something with every result
   # (persist data in redis, for example)
   def handle_call({channel, command}, from, state) do
-    do_handle_call({channel, command}, from, state)
+    new_state = Map.put(state, channel, state[channel] || %{acronym: "", answers: %{}})
+    do_handle_call({channel, command}, from, new_state)
   end
 
   defp do_handle_call({_, {:help}}, _from, state) do
     items = [
       "/#{@name} help: displays this message (privately)",
+      "/#{@name} start: starts the game (can't activate during a current game)",
+      "/#{@name} submit: displays this message (privately)",
     ]
     {:reply, items, state}
   end
-  defp do_handle_call({channel, {:push, id, item}}, _from, state) do
-    queue = List.wrap(state[channel])
-    new_queue = queue ++ [%{"id" => id, "item" => item}]
-    items = Enum.map(new_queue, &(&1["item"]))
-    {:reply, items, Map.put(state, channel, new_queue)}
+  defp do_handle_call({channel, {:start}}, _from, state) do
+    channel_state = %{acronym: "YMMV", answers: %{}}
+    {:reply, channel_state[:acronym], Map.put(state, channel, channel_state)}
   end
-  defp do_handle_call({channel, {:edit}}, _from, state) do
-    queue = List.wrap(state[channel])
-    {:reply, queue, state}
+  defp do_handle_call({channel, {:submit, answer, id}}, _from, state) do
+    answers = Map.get(state[channel], :answers)
+    new_answers = Map.put(answers, id, %{answer: answer, count:  0})
+    {:reply, :ok, Map.put(state[channel], :answers, new_answers)}
   end
-  defp do_handle_call({channel, {:remove, id}}, _from, state) do
-    queue = List.wrap(state[channel])
-    new_queue =
-      case Enum.find_index(queue, &(&1["id"] == id)) do
-        nil -> queue
-        index -> List.delete_at(queue, index)
-      end
-    {:reply, new_queue, Map.put(state, channel, new_queue)}
+  defp do_handle_call({channel, {:vote, id}}, _from, state) do
+    count = get_in(state, [channel, id, :count])
+    {_, state} = get_and_update_in(state, [channel, id, :count], &{&1, &1 + 1})
+    {:reply, :ok, state}
   end
+  defp do_handle_call({channel, {:state, _}}, _from, state) do
+    {:reply, state[channel], state}
+  end
+
   defp do_handle_call({channel, {:delayed_message, message_sender}}, from, state) do
     case state[channel]["delayed_job_ref"] do
       nil ->
